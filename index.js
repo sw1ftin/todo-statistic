@@ -1,5 +1,5 @@
-const {getAllFilePathsWithExtension, readFile} = require('./fileSystem');
-const {readLine} = require('./console');
+const { getAllFilePathsWithExtension, readFile } = require('./fileSystem');
+const { readLine } = require('./console');
 
 const files = getFiles();
 
@@ -13,17 +13,86 @@ function getFiles() {
     return filePaths.map(path => readFile(path));
 }
 
+function countExclamationMarks(str) {
+    return (str.match(/!/g) || []).length;
+}
+
+function parseDate(todo) {
+    const match = todo.match(/;\s*(\d{4}-\d{2}-\d{2})/);
+    return match ? new Date(match[1]) : null;
+}
+
+function getUsername(todo) {
+    const parts = todo.split(';');
+    if (parts.length >= 3) {
+        return parts[0].trim();
+    }
+    return '';
+}
+
+function sortByImportance(todos) {
+    return todos.sort((a, b) => {
+        const aMarks = countExclamationMarks(a);
+        const bMarks = countExclamationMarks(b);
+        return bMarks - aMarks;
+    });
+}
+
+function sortByUser(todos) {
+    const userGroups = new Map();
+    const noUser = [];
+
+    todos.forEach(todo => {
+        const username = getUsername(todo).toLowerCase();
+        if (username) {
+            if (!userGroups.has(username)) {
+                userGroups.set(username, []);
+            }
+            userGroups.get(username).push(todo);
+        } else {
+            noUser.push(todo);
+        }
+    });
+
+    const result = [];
+    for (const [user, userTodos] of userGroups) {
+        result.push(`=== ${user} ===`);
+        result.push(...userTodos);
+    }
+
+    if (noUser.length > 0) {
+        result.push('=== Без автора ===');
+        result.push(...noUser);
+    }
+
+    return result;
+}
+
+function sortByDate(todos) {
+    const withDate = [];
+    const withoutDate = [];
+
+    todos.forEach(todo => {
+        const date = parseDate(todo);
+        if (date) {
+            withDate.push({ todo, date });
+        } else {
+            withoutDate.push(todo);
+        }
+    });
+
+    withDate.sort((a, b) => b.date - a.date);
+    return [...withDate.map(item => item.todo), ...withoutDate];
+}
+
 function processCommand(command) {
     if (command.startsWith('user ')) {
-        const username = command.slice(5).toLowerCase();
-        todos = parseTodo();
-        const userTodos = todos.filter(todo => {
-            const match = todo.match(/^([^;]+)/);
-            return match && match[1].trim().toLowerCase() === username;
-        });
-        for (let todo of userTodos) {
-            console.log(todo);
-        }
+        getUserData(command);
+        return;
+    }
+
+    if (command.startsWith('sort ')) {
+        sortTodos(command);
         return;
     }
 
@@ -50,7 +119,8 @@ function processCommand(command) {
     }
 }
 
-// TODO Jakob; 2025-03-02; Сделать практику!
+// TODO Jakob; 2025-03-02; Сделать практику!!
+// TODO unnamed todo for test
 function parseTodo() {
     const comments = [];
     for (const file of files) {
@@ -64,4 +134,40 @@ function parseTodo() {
         }
     }
     return comments;
+}
+
+function getUserData(command) {
+    const username = command.slice(5);
+    todos = parseTodo();
+    const userTodos = todos.filter(todo => getUsername(todo) === username);
+    for (let todo of userTodos) {
+        console.log(todo);
+    }
+}
+
+function sortTodos(command) {
+    const sortType = command.slice(5);
+    todos = parseTodo();
+    let sorted;
+
+
+    switch (sortType) {
+        case 'importance':
+            sorted = sortByImportance(todos);
+            break;
+        case 'user':
+            sorted = sortByUser(todos);
+            break;
+        case 'date':
+            sorted = sortByDate(todos);
+            break;
+        default:
+            console.log('Неверный тип сортировки');
+            return;
+    }
+
+    for (let item of sorted) {
+        console.log(item);
+    }
+    return;
 }
