@@ -96,6 +96,11 @@ function processCommand(command) {
         return;
     }
 
+    if (command.startsWith('date ')) {
+        filterByDate(command);
+        return;
+    }
+
     switch (command) {
         case 'exit':
             process.exit(0);
@@ -119,7 +124,35 @@ function processCommand(command) {
     }
 }
 
-// TODO Jakob; 2025-03-02; Сделать практику!!
+function filterByDate(command) {
+    const dateStr = command.slice(5);
+    const parts = dateStr.split('-');
+    
+    if (parts.length > 3 || parts.length === 0) {
+        console.log('Неверный формат даты. Используйте: YYYY[-MM[-DD]]');
+        return;
+    }
+
+    const [year, month = '01', day = '01'] = parts;
+    const targetDate = new Date(`${year}-${month}-${day}`);
+
+    if (isNaN(targetDate.getTime())) {
+        console.log('Неверный формат даты');
+        return;
+    }
+
+    todos = parseTodo();
+    const filteredTodos = todos.filter(todo => {
+        const todoDate = parseDate(todo);
+        return todoDate && todoDate >= targetDate;
+    });
+
+    for (let todo of filteredTodos) {
+        console.log(todo);
+    }
+}
+
+// TODO Jakob; 2025-03-04; Сделать практику!!
 // TODO unnamed todo for test
 function parseTodo() {
     const comments = [];
