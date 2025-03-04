@@ -1,17 +1,11 @@
 const { getAllFilePathsWithExtension, readFile } = require('./fileSystem');
 const { readLine } = require('./console');
-
-const files = getFiles();
+const path = require('path');
 
 let todos = [];
 
 console.log('Please, write your command!');
 readLine(processCommand);
-
-function getFiles() {
-    const filePaths = getAllFilePathsWithExtension(process.cwd(), 'js');
-    return filePaths.map(path => readFile(path));
-}
 
 function countExclamationMarks(str) {
     return (str.match(/!/g) || []).length;
@@ -32,8 +26,8 @@ function getUsername(todo) {
 
 function sortByImportance(todos) {
     return todos.sort((a, b) => {
-        const aMarks = countExclamationMarks(a);
-        const bMarks = countExclamationMarks(b);
+        const aMarks = countExclamationMarks(a.text);
+        const bMarks = countExclamationMarks(b.text);
         return bMarks - aMarks;
     });
 }
@@ -43,7 +37,7 @@ function sortByUser(todos) {
     const noUser = [];
 
     todos.forEach(todo => {
-        const username = getUsername(todo).toLowerCase();
+        const username = getUsername(todo.text).toLowerCase();
         if (username) {
             if (!userGroups.has(username)) {
                 userGroups.set(username, []);
@@ -56,12 +50,10 @@ function sortByUser(todos) {
 
     const result = [];
     for (const [user, userTodos] of userGroups) {
-        result.push(`=== ${user} ===`);
         result.push(...userTodos);
     }
 
     if (noUser.length > 0) {
-        result.push('=== Без автора ===');
         result.push(...noUser);
     }
 
@@ -73,7 +65,7 @@ function sortByDate(todos) {
     const withoutDate = [];
 
     todos.forEach(todo => {
-        const date = parseDate(todo);
+        const date = parseDate(todo.text);
         if (date) {
             withDate.push({ todo, date });
         } else {
@@ -83,6 +75,92 @@ function sortByDate(todos) {
 
     withDate.sort((a, b) => b.date - a.date);
     return [...withDate.map(item => item.todo), ...withoutDate];
+}
+
+function truncate(str, maxLength) {
+    if (str.length <= maxLength) return str;
+    return str.slice(0, maxLength - 3) + '...';
+}
+
+function getColumnData(todos) {
+    const columns = {
+        importance: { maxWidth: 1, values: [] },
+        username: { maxWidth: 10, values: [] },
+        date: { maxWidth: 10, values: [] },
+        file: { maxWidth: 15, values: [] },
+        comment: { maxWidth: 50, values: [] }
+    };
+
+    const headers = ['!', 'user', 'date', 'file', 'comment'];
+    
+    todos.forEach(todo => {
+        const hasExclamation = todo.text.includes('!') ? '!' : '';
+        const username = getUsername(todo.text) || '';
+        const date = parseDate(todo.text);
+        const dateStr = date ? date.toISOString().slice(0, 10) : '';
+        const fileName = path.basename(todo.file);
+        const parts = todo.text.split(';');
+        const comment = parts.length >= 3 ? parts[2].trim() : todo.text;
+
+        columns.importance.values.push(hasExclamation);
+        columns.username.values.push(username);
+        columns.date.values.push(dateStr);
+        columns.file.values.push(fileName);
+        columns.comment.values.push(comment);
+    });
+
+    // Вычисляем оптимальную ширину для каждой колонки с учетом заголовков
+    const colKeys = Object.keys(columns);
+    for (let i = 0; i < colKeys.length; i++) {
+        const col = columns[colKeys[i]];
+        col.width = Math.min(
+            col.maxWidth,
+            Math.max(headers[i].length, ...col.values.map(v => v.length))
+        );
+    }
+
+    return columns;
+}
+
+function formatTableRow(columns, values) {
+    const cells = [
+        values[0].padEnd(columns.importance.width),
+        truncate(values[1], columns.username.width).padEnd(columns.username.width),
+        values[2].padEnd(columns.date.width),
+        truncate(values[3], columns.file.width).padEnd(columns.file.width),
+        truncate(values[4], columns.comment.width)
+    ];
+    
+    return cells.join('  |  ');
+}
+
+function getTableSeparator(columns) {
+    const totalWidth = Object.values(columns).reduce((sum, col) => sum + col.width, 0) + 16; // 16 для разделителей (4 разделителя по 4 символа)
+    return '-'.repeat(totalWidth);
+}
+
+function displayTodos(todos) {
+    if (!todos.length) {
+        console.log('Нет TODO комментариев');
+        return;
+    }
+    
+    const columns = getColumnData(todos);
+    
+    console.log(formatTableRow(columns, ['!', 'user', 'date', 'file', 'comment']));
+    console.log(getTableSeparator(columns));
+    
+    for (let i = 0; i < todos.length; i++) {
+        console.log(formatTableRow(columns, [
+            columns.importance.values[i],
+            columns.username.values[i],
+            columns.date.values[i],
+            columns.file.values[i],
+            columns.comment.values[i]
+        ]));
+    }
+
+    console.log(getTableSeparator(columns));
 }
 
 function processCommand(command) {
@@ -107,16 +185,12 @@ function processCommand(command) {
             break;
         case 'show':
             todos = parseTodo();
-            for (let todo of todos) {
-                console.log(todo);
-            }
+            displayTodos(todos);
             break;
         case 'important':
             todos = parseTodo();
-            const importantTodos = todos.filter(todo => todo.includes('!'));
-            for (let todo of importantTodos) {
-                console.log(todo);
-            }
+            const importantTodos = todos.filter(todo => todo.text.includes('!'));
+            displayTodos(importantTodos);
             break;
         default:
             console.log('wrong command');
@@ -143,26 +217,25 @@ function filterByDate(command) {
 
     todos = parseTodo();
     const filteredTodos = todos.filter(todo => {
-        const todoDate = parseDate(todo);
+        const todoDate = parseDate(todo.text);
         return todoDate && todoDate >= targetDate;
     });
 
-    for (let todo of filteredTodos) {
-        console.log(todo);
-    }
+    displayTodos(filteredTodos);
 }
 
-// TODO Jakob; 2025-03-04; Сделать практику!!
-// TODO unnamed todo for test
 function parseTodo() {
     const comments = [];
-    for (const file of files) {
-        const lines = file.split('\r\n');
+    const filePaths = getAllFilePathsWithExtension(process.cwd(), 'js');
+    
+    for (const filePath of filePaths) {
+        const fileContent = readFile(filePath);
+        const lines = fileContent.split('\r\n');
         for (const line of lines) {
             const todoIndex = line.indexOf('// TODO');
             if (todoIndex !== -1 && !line.includes('\'// TODO')) {
                 const todoText = line.slice(todoIndex + 7).trim();
-                comments.push(todoText);
+                comments.push({ text: todoText, file: filePath });
             }
         }
     }
@@ -172,17 +245,14 @@ function parseTodo() {
 function getUserData(command) {
     const username = command.slice(5);
     todos = parseTodo();
-    const userTodos = todos.filter(todo => getUsername(todo) === username);
-    for (let todo of userTodos) {
-        console.log(todo);
-    }
+    const userTodos = todos.filter(todo => getUsername(todo.text).toLowerCase() === username.toLowerCase());
+    displayTodos(userTodos);
 }
 
 function sortTodos(command) {
     const sortType = command.slice(5);
     todos = parseTodo();
     let sorted;
-
 
     switch (sortType) {
         case 'importance':
@@ -199,8 +269,5 @@ function sortTodos(command) {
             return;
     }
 
-    for (let item of sorted) {
-        console.log(item);
-    }
-    return;
+    displayTodos(sorted);
 }
